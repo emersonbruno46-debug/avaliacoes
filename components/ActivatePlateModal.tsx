@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { Plate } from '@/lib/types';
 import { X, Store, Globe, Tag, CheckCircle, AlertCircle } from 'lucide-react';
 
@@ -56,27 +55,24 @@ export default function ActivatePlateModal({
     setLoading(true);
 
     try {
-      if (!isSupabaseConfigured()) {
-        alert('Supabase não configurado no .env.local.');
-        setLoading(false);
-        return;
-      }
-
-      const { error } = await supabase
-        .from('plates')
-        .update({
+      const res = await fetch('/api/admin/plates', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: plate.id,
           company_name: companyName.trim(),
           destination_url: destinationUrl.trim(),
           status: 'active',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', plate.id);
+        }),
+      });
 
-      if (error) {
-        setErrorMsg(`Erro ao atualizar placa no Supabase: ${error.message}`);
-      } else {
+      const data = await res.json();
+
+      if (res.ok && data.success) {
         onSuccess();
         onClose();
+      } else {
+        setErrorMsg(data.error || 'Erro ao atualizar a placa.');
       }
     } catch (err: any) {
       setErrorMsg(`Erro inesperado: ${err.message || 'Falha na requisição'}`);

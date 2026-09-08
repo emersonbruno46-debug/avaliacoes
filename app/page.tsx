@@ -8,6 +8,7 @@ import { generatePlateSVG, generatePlatePNG } from '@/lib/qrHelper';
 import { Plate } from '@/lib/types';
 import QRCodePlateModal from '@/components/QRCodePlateModal';
 import ActivatePlateModal from '@/components/ActivatePlateModal';
+import AdminLoginPage from '@/app/admin/page';
 import {
   Plus,
   Layers,
@@ -22,9 +23,13 @@ import {
   Store,
   Globe,
   Archive,
+  LogOut,
+  Trash2,
+  AlertCircle,
 } from 'lucide-react';
 
 export default function StockPage() {
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [plates, setPlates] = useState<Plate[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -32,15 +37,17 @@ export default function StockPage() {
   // Modais
   const [viewingPlate, setViewingPlate] = useState<Plate | null>(null);
   const [activatingPlate, setActivatingPlate] = useState<Plate | null>(null);
+  const [deletingPlate, setDeletingPlate] = useState<Plate | null>(null);
   
   // Geração de Lote
   const [batchQuantity, setBatchQuantity] = useState<number>(10);
   const [showBatchModal, setShowBatchModal] = useState<boolean>(false);
   const [batchGenerating, setBatchGenerating] = useState<boolean>(false);
   const [downloadingZip, setDownloadingZip] = useState<boolean>(false);
+  const [singleGenerating, setSingleGenerating] = useState<boolean>(false);
+  const [deletingLoading, setDeletingLoading] = useState<boolean>(false);
 
   const [baseUrl, setBaseUrl] = useState<string>('http://localhost:3000');
-  const [singleGenerating, setSingleGenerating] = useState<boolean>(false);
 
   useEffect(() => {
     const envUrl = process.env.NEXT_PUBLIC_APP_URL;
@@ -50,8 +57,28 @@ export default function StockPage() {
       setBaseUrl(window.location.origin);
     }
 
-    fetchPlates();
+    checkAuthAndFetch();
   }, []);
+
+  const checkAuthAndFetch = async () => {
+    setLoading(true);
+    try {
+      const authRes = await fetch('/api/admin/check');
+      const authData = await authRes.json();
+
+      if (authData.authenticated) {
+        setAuthenticated(true);
+        await fetchPlates();
+      } else {
+        setAuthenticated(false);
+      }
+    } catch (err) {
+      console.error('Erro ao verificar autenticação:', err);
+      setAuthenticated(false);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchPlates = async () => {
     if (!isSupabaseConfigured()) {
@@ -77,55 +104,48 @@ export default function StockPage() {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/admin/logout', { method: 'POST' });
+      setAuthenticated(false);
+    } catch (err) {
+      console.error('Erro ao fazer logout:', err);
+    }
+  };
+
   /**
-   * GERAR NOVA PLACA (Individual)
-   * Gera um ID único automático de 5 caracteres, salva no Supabase e abre o modal imediatamente.
+   * GERAR NOVA PLACA (Individual protegida por API)
    */
   const handleGenerateSingle = async () => {
     setSingleGenerating(true);
     try {
       const uniqueCode = await generateUniquePlateCode();
 
-      const newPlate: Partial<Plate> = {
+      const newPlateData = {
         code: uniqueCode,
         status: 'available',
         company_name: null,
         destination_url: null,
       };
 
-      if (isSupabaseConfigured()) {
-        const { data, error } = await supabase
-          .from('plates')
-          .insert([newPlate])
-          .select()
-          .single();
+      const res = await fetch('/api/admin/plates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plates: [newPlateData] }),
+      });
 
-        if (error) {
-          alert(`Erro ao criar placa no Supabase: ${error.message}`);
-          setSingleGenerating(false);
-          return;
-        }
+      const json = await res.json();
 
-        const created = data as Plate;
+      if (res.ok && json.success && json.data?.[0]) {
+        const created = json.data[0] as Plate;
         setPlates((prev) => [created, ...prev]);
         setViewingPlate(created);
       } else {
-        // Modo fallback local para testes sem Supabase
-        const fallbackPlate: Plate = {
-          id: Math.random().toString(),
-          code: uniqueCode,
-          company_name: null,
-          destination_url: null,
-          status: 'available',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        setPlates((prev) => [fallbackPlate, ...prev]);
-        setViewingPlate(fallbackPlate);
+        alert(`Erro ao criar placa: ${json.error || 'Falha na requisição'}`);
       }
     } catch (err) {
       console.error(err);
-      alert('Erro inesperado ao gerar código único.');
+      alert('Erro inesperado ao gerar placa.');
     } finally {
       setSingleGenerating(false);
     }
@@ -149,30 +169,19 @@ export default function StockPage() {
         });
       }
 
-      if (isSupabaseConfigured()) {
-        const { data, error } = await supabase
-          .from('plates')
-          .insert(newPlatesToInsert)
-          .select();
+      const res = await fetch('/api/admin/plates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plates: newPlatesToInsert }),
+      });
 
-        if (error) {
-          alert(`Erro ao gerar lote no Supabase: ${error.message}`);
-        } else if (data) {
-          setPlates((prev) => [...(data as Plate[]), ...prev]);
-          setShowBatchModal(false);
-        }
-      } else {
-        const mockBatch: Plate[] = newPlatesToInsert.map((p, idx) => ({
-          id: `mock-${idx}-${Date.now()}`,
-          code: p.code,
-          company_name: null,
-          destination_url: null,
-          status: 'available',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }));
-        setPlates((prev) => [...mockBatch, ...prev]);
+      const json = await res.json();
+
+      if (res.ok && json.success && Array.isArray(json.data)) {
+        setPlates((prev) => [...(json.data as Plate[]), ...prev]);
         setShowBatchModal(false);
+      } else {
+        alert(`Erro ao gerar lote: ${json.error || 'Falha na requisição'}`);
       }
     } catch (err) {
       console.error(err);
@@ -183,8 +192,35 @@ export default function StockPage() {
   };
 
   /**
+   * REMOVER / APAGAR PLACA
+   */
+  const confirmDeletePlate = async () => {
+    if (!deletingPlate) return;
+    setDeletingLoading(true);
+
+    try {
+      const res = await fetch(`/api/admin/plates?id=${deletingPlate.id}`, {
+        method: 'DELETE',
+      });
+
+      const json = await res.json();
+
+      if (res.ok && json.success) {
+        setPlates((prev) => prev.filter((p) => p.id !== deletingPlate.id));
+        setDeletingPlate(null);
+      } else {
+        alert(`Erro ao remover placa: ${json.error || 'Falha na requisição'}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro inesperado ao deletar placa.');
+    } finally {
+      setDeletingLoading(false);
+    }
+  };
+
+  /**
    * DOWNLOAD DO LOTE EM ZIP
-   * Empacota todos os arquivos SVG vetoriais das placas filtradas na busca num arquivo .zip
    */
   const handleDownloadZip = async () => {
     if (filteredPlates.length === 0) return;
@@ -204,10 +240,8 @@ export default function StockPage() {
           includeLabel: true,
         });
 
-        // Adicionar SVG ao ZIP
         folderSvg?.file(`QR-${plate.code}.svg`, svgContent);
 
-        // Adicionar PNG (base64 sem prefixo data:image/png;base64,) ao ZIP
         const base64Data = pngDataUrl.replace(/^data:image\/png;base64,/, '');
         folderPng?.file(`QR-${plate.code}.png`, base64Data, { base64: true });
       }
@@ -229,7 +263,20 @@ export default function StockPage() {
     }
   };
 
-  // Filtragem da busca por ID (code) ou por Nome da Empresa
+  // Se ainda estiver carregando status de auth
+  if (authenticated === null) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans text-gray-500 text-sm">
+        Verificando autenticação...
+      </div>
+    );
+  }
+
+  // Se não estiver autenticado, exibir a tela de Login
+  if (!authenticated) {
+    return <AdminLoginPage />;
+  }
+
   const filteredPlates = plates.filter((p) => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return true;
@@ -249,9 +296,11 @@ export default function StockPage() {
         {/* Cabeçalho */}
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
           <div className="space-y-1">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-bold uppercase tracking-wider">
-              <Archive className="w-3.5 h-3.5" />
-              Ferramenta Interna
+            <div className="flex items-center gap-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-bold uppercase tracking-wider">
+                <Archive className="w-3.5 h-3.5" />
+                Painel Administrativo
+              </div>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
               ESTOQUE DE PLACAS
@@ -297,6 +346,15 @@ export default function StockPage() {
                 <span>{downloadingZip ? 'Compactando...' : 'BAIXAR TODOS'}</span>
               </button>
             )}
+
+            {/* Botão SAIR */}
+            <button
+              onClick={handleLogout}
+              className="p-3 bg-gray-100 hover:bg-red-50 text-gray-600 hover:text-red-600 rounded-2xl transition-colors border border-gray-200"
+              title="Sair do Painel (Logout)"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </header>
 
@@ -304,14 +362,13 @@ export default function StockPage() {
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-xs sm:text-sm text-amber-800">
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <strong>Modo de Demonstração (Sem Supabase):</strong> As credenciais do Supabase não foram configuradas no <code className="bg-amber-100 px-1 py-0.5 rounded font-mono text-xs">.env.local</code>. As placas geradas serão exibidas em memória local nesta sessão.
+              <strong>Modo de Demonstração (Sem Supabase):</strong> Configure as credenciais do Supabase no <code className="bg-amber-100 px-1 py-0.5 rounded font-mono text-xs">.env.local</code> para salvar no banco.
             </div>
           </div>
         )}
 
         {/* Barra de Busca e Estatísticas */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-          {/* Busca por ID ou Empresa */}
           <div className="md:col-span-2 relative">
             <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2" />
             <input
@@ -331,7 +388,6 @@ export default function StockPage() {
             )}
           </div>
 
-          {/* Contadores do Estoque */}
           <div className="flex items-center justify-around bg-white p-3 border border-gray-200 rounded-2xl shadow-xs text-xs font-semibold">
             <div className="text-center">
               <span className="text-gray-400 block uppercase tracking-wider text-[10px]">Total</span>
@@ -394,7 +450,7 @@ export default function StockPage() {
                     key={plate.id}
                     className="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between space-y-4"
                   >
-                    {/* Linha 1: ID e Badge de Status */}
+                    {/* Linha 1: ID, Badge e Botão Remover */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Tag className="w-4 h-4 text-blue-600" />
@@ -402,15 +458,26 @@ export default function StockPage() {
                           {plate.code}
                         </span>
                       </div>
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wide border ${
-                          isAvailable
-                            ? 'bg-blue-50 text-blue-700 border-blue-200'
-                            : 'bg-green-50 text-green-700 border-green-200'
-                        }`}
-                      >
-                        {isAvailable ? 'Disponível' : 'Ativa'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wide border ${
+                            isAvailable
+                              ? 'bg-blue-50 text-blue-700 border-blue-200'
+                              : 'bg-green-50 text-green-700 border-green-200'
+                          }`}
+                        >
+                          {isAvailable ? 'Disponível' : 'Ativa'}
+                        </span>
+                        
+                        {/* Botão Remover Placa */}
+                        <button
+                          onClick={() => setDeletingPlate(plate)}
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Remover / Apagar Placa"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Linha 2: Empresa e Destino */}
@@ -481,7 +548,7 @@ export default function StockPage() {
         </section>
       </div>
 
-      {/* Modal Visualizador do QR Code da Placa */}
+      {/* Modal Visualizador do QR Code */}
       {viewingPlate && (
         <QRCodePlateModal
           plate={viewingPlate}
@@ -497,6 +564,45 @@ export default function StockPage() {
           onClose={() => setActivatingPlate(null)}
           onSuccess={fetchPlates}
         />
+      )}
+
+      {/* Modal de Confirmação para REMOVER PLACA */}
+      {deletingPlate && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-gray-200 shadow-2xl max-w-sm w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mx-auto border border-red-100">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="text-lg font-black text-gray-900">
+                Remover Placa <span className="font-mono text-red-600">{deletingPlate.code}</span>?
+              </h3>
+              <p className="text-xs text-gray-500">
+                Tem certeza que deseja apagar esta placa física do estoque? Essa ação é irreversível.
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeletingPlate(null)}
+                className="flex-1 py-3 bg-gray-100 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-200"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeletePlate}
+                disabled={deletingLoading}
+                className="flex-1 py-3 bg-red-600 text-white text-xs font-bold rounded-xl hover:bg-red-700 disabled:opacity-50 shadow-sm flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{deletingLoading ? 'Removendo...' : 'APAGAR'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal de Geração de Lote */}
