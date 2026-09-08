@@ -1,14 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Lock, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
 
 export default function AdminLoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,8 +29,8 @@ export default function AdminLoginPage() {
       const data = await res.json();
 
       if (res.ok && data.success) {
-        router.push('/');
-        router.refresh();
+        // Redirecionamento de navegador completo para garantir atualização dos cookies
+        window.location.href = '/';
       } else {
         setErrorMsg(data.error || 'Senha incorreta. Tente novamente.');
       }

@@ -63,7 +63,7 @@ export default function StockPage() {
   const checkAuthAndFetch = async () => {
     setLoading(true);
     try {
-      const authRes = await fetch('/api/admin/check');
+      const authRes = await fetch('/api/admin/check', { cache: 'no-store' });
       const authData = await authRes.json();
 
       if (authData.authenticated) {
@@ -108,6 +108,7 @@ export default function StockPage() {
     try {
       await fetch('/api/admin/logout', { method: 'POST' });
       setAuthenticated(false);
+      window.location.href = '/admin';
     } catch (err) {
       console.error('Erro ao fazer logout:', err);
     }
