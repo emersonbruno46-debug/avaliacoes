@@ -26,6 +26,8 @@ import {
   LogOut,
   Trash2,
   AlertCircle,
+  X,
+  CheckCircle2,
 } from 'lucide-react';
 
 export default function StockPage() {
@@ -47,7 +49,23 @@ export default function StockPage() {
   const [singleGenerating, setSingleGenerating] = useState<boolean>(false);
   const [deletingLoading, setDeletingLoading] = useState<boolean>(false);
 
+  // Notificações UI (Substitutos visuais para alert)
+  const [toastSuccess, setToastSuccess] = useState<string | null>(null);
+  const [toastError, setToastError] = useState<string | null>(null);
+
   const [baseUrl, setBaseUrl] = useState<string>('http://localhost:3000');
+
+  const showSuccessNotice = (msg: string) => {
+    setToastError(null);
+    setToastSuccess(msg);
+    setTimeout(() => setToastSuccess(null), 4000);
+  };
+
+  const showErrorNotice = (msg: string) => {
+    setToastSuccess(null);
+    setToastError(msg);
+    setTimeout(() => setToastError(null), 5000);
+  };
 
   useEffect(() => {
     const envUrl = process.env.NEXT_PUBLIC_APP_URL;
@@ -141,12 +159,13 @@ export default function StockPage() {
         const created = json.data[0] as Plate;
         setPlates((prev) => [created, ...prev]);
         setViewingPlate(created);
+        showSuccessNotice(`Placa física ${created.code} gerada com sucesso!`);
       } else {
-        alert(`Erro ao criar placa: ${json.error || 'Falha na requisição'}`);
+        showErrorNotice(`Erro ao criar placa: ${json.error || 'Falha na requisição'}`);
       }
     } catch (err) {
       console.error(err);
-      alert('Erro inesperado ao gerar placa.');
+      showErrorNotice('Erro inesperado ao gerar placa.');
     } finally {
       setSingleGenerating(false);
     }
@@ -154,39 +173,30 @@ export default function StockPage() {
 
   /**
    * GERAR LOTE DE PLACAS (10, 20, 50, 100)
+   * Executado 100% no servidor via API Route autenticada para respeitar o RLS do Supabase
    */
   const handleGenerateBatch = async () => {
     setBatchGenerating(true);
     try {
-      const newPlatesToInsert = [];
-
-      for (let i = 0; i < batchQuantity; i++) {
-        const code = await generateUniquePlateCode();
-        newPlatesToInsert.push({
-          code,
-          status: 'available',
-          company_name: null,
-          destination_url: null,
-        });
-      }
-
-      const res = await fetch('/api/admin/plates', {
+      const res = await fetch('/api/admin/plates/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plates: newPlatesToInsert }),
+        body: JSON.stringify({ quantity: batchQuantity }),
       });
 
       const json = await res.json();
 
       if (res.ok && json.success && Array.isArray(json.data)) {
-        setPlates((prev) => [...(json.data as Plate[]), ...prev]);
+        const newPlates = json.data as Plate[];
+        setPlates((prev) => [...newPlates, ...prev]);
         setShowBatchModal(false);
+        showSuccessNotice(`Lote de ${json.count || newPlates.length} placas gerado com sucesso!`);
       } else {
-        alert(`Erro ao gerar lote: ${json.error || 'Falha na requisição'}`);
+        showErrorNotice(json.error || 'Falha ao gerar lote de placas no servidor.');
       }
     } catch (err) {
       console.error(err);
-      alert('Falha ao gerar lote de placas.');
+      showErrorNotice('Falha de conexão ao comunicar com o servidor.');
     } finally {
       setBatchGenerating(false);
     }
@@ -208,13 +218,14 @@ export default function StockPage() {
 
       if (res.ok && json.success) {
         setPlates((prev) => prev.filter((p) => p.id !== deletingPlate.id));
+        showSuccessNotice(`Placa ${deletingPlate.code} removida do estoque.`);
         setDeletingPlate(null);
       } else {
-        alert(`Erro ao remover placa: ${json.error || 'Falha na requisição'}`);
+        showErrorNotice(`Erro ao remover placa: ${json.error || 'Falha na requisição'}`);
       }
     } catch (err) {
       console.error(err);
-      alert('Erro inesperado ao deletar placa.');
+      showErrorNotice('Erro inesperado ao deletar placa.');
     } finally {
       setDeletingLoading(false);
     }
@@ -256,15 +267,15 @@ export default function StockPage() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(downloadUrl);
+      showSuccessNotice(`Download do arquivo ZIP finalizado! (${filteredPlates.length} placas)`);
     } catch (err) {
       console.error('Erro ao gerar arquivo ZIP:', err);
-      alert('Falha ao criar o arquivo ZIP de exportação.');
+      showErrorNotice('Falha ao criar o arquivo ZIP de exportação.');
     } finally {
       setDownloadingZip(false);
     }
   };
 
-  // Se ainda estiver carregando status de auth
   if (authenticated === null) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans text-gray-500 text-sm">
@@ -273,7 +284,6 @@ export default function StockPage() {
     );
   }
 
-  // Se não estiver autenticado, exibir a tela de Login
   if (!authenticated) {
     return <AdminLoginPage />;
   }
@@ -292,8 +302,35 @@ export default function StockPage() {
   const activeCount = plates.filter((p) => p.status === 'active').length;
 
   return (
-    <main className="min-h-screen bg-gray-50 text-gray-900 py-8 px-4 sm:px-6 lg:px-8 font-sans">
+    <main className="min-h-screen bg-gray-50 text-gray-900 py-8 px-4 sm:px-6 lg:px-8 font-sans relative">
       <div className="max-w-5xl mx-auto space-y-6">
+        {/* Notificações Visuais de Sucesso ou Erro (Substitutos de alert) */}
+        {toastSuccess && (
+          <div className="fixed bottom-6 right-6 z-50 bg-emerald-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5 border border-emerald-700 text-sm font-semibold">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <span>{toastSuccess}</span>
+            <button
+              onClick={() => setToastSuccess(null)}
+              className="text-emerald-300 hover:text-white p-1 ml-2"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {toastError && (
+          <div className="fixed bottom-6 right-6 z-50 bg-red-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5 border border-red-700 text-sm font-semibold">
+            <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+            <span>{toastError}</span>
+            <button
+              onClick={() => setToastError(null)}
+              className="text-red-300 hover:text-white p-1 ml-2"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Cabeçalho */}
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
           <div className="space-y-1">
@@ -563,7 +600,10 @@ export default function StockPage() {
         <ActivatePlateModal
           plate={activatingPlate}
           onClose={() => setActivatingPlate(null)}
-          onSuccess={fetchPlates}
+          onSuccess={() => {
+            fetchPlates();
+            showSuccessNotice('Placa atualizada com sucesso!');
+          }}
         />
       )}
 
@@ -650,7 +690,7 @@ export default function StockPage() {
                 disabled={batchGenerating}
                 className="flex-1 py-3 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 disabled:opacity-50 shadow-sm"
               >
-                {batchGenerating ? 'Gerando...' : 'GERAR LOTE'}
+                {batchGenerating ? 'Gerando Lote...' : 'GERAR LOTE'}
               </button>
             </div>
           </div>

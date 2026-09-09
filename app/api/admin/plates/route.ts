@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getAdminToken, COOKIE_NAME } from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
 async function isAuthenticated(): Promise<boolean> {
   const cookieStore = await cookies();
@@ -11,11 +11,11 @@ async function isAuthenticated(): Promise<boolean> {
 
 /**
  * POST /api/admin/plates
- * Inserção protegida de 1 ou mais placas
+ * Inserção protegida no servidor de 1 placa individual
  */
 export async function POST(request: Request) {
   if (!(await isAuthenticated())) {
-    return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+    return NextResponse.json({ error: 'Não autorizado. Faça login primeiro.' }, { status: 401 });
   }
 
   try {
@@ -23,22 +23,24 @@ export async function POST(request: Request) {
     const { plates } = body;
 
     if (!Array.isArray(plates) || plates.length === 0) {
-      return NextResponse.json({ error: 'Dados inválidos.' }, { status: 400 });
+      return NextResponse.json({ error: 'Dados de placas inválidos.' }, { status: 400 });
     }
 
-    const { data, error } = await supabase
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data, error } = await supabaseAdmin
       .from('plates')
       .insert(plates)
       .select();
 
     if (error) {
+      console.error('Erro na inserção server-side do Supabase:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, data });
   } catch (err: any) {
     return NextResponse.json(
-      { error: err.message || 'Erro ao criar placas.' },
+      { error: err.message || 'Erro ao criar placas no servidor.' },
       { status: 500 }
     );
   }
@@ -50,7 +52,7 @@ export async function POST(request: Request) {
  */
 export async function PUT(request: Request) {
   if (!(await isAuthenticated())) {
-    return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+    return NextResponse.json({ error: 'Não autorizado. Faça login primeiro.' }, { status: 401 });
   }
 
   try {
@@ -69,7 +71,8 @@ export async function PUT(request: Request) {
     if (destination_url !== undefined) updatePayload.destination_url = destination_url;
     if (status !== undefined) updatePayload.status = status;
 
-    const { data, error } = await supabase
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data, error } = await supabaseAdmin
       .from('plates')
       .update(updatePayload)
       .eq('id', id)
@@ -95,7 +98,7 @@ export async function PUT(request: Request) {
  */
 export async function DELETE(request: Request) {
   if (!(await isAuthenticated())) {
-    return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+    return NextResponse.json({ error: 'Não autorizado. Faça login primeiro.' }, { status: 401 });
   }
 
   try {
@@ -103,10 +106,11 @@ export async function DELETE(request: Request) {
     const id = searchParams.get('id');
 
     if (!id) {
-      return NextResponse.json({ error: 'ID é obrigatório.' }, { status: 400 });
+      return NextResponse.json({ error: 'ID da placa é obrigatório.' }, { status: 400 });
     }
 
-    const { error } = await supabase.from('plates').delete().eq('id', id);
+    const supabaseAdmin = getSupabaseAdmin();
+    const { error } = await supabaseAdmin.from('plates').delete().eq('id', id);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
