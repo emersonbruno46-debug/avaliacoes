@@ -18,6 +18,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Não autorizado. Faça login primeiro.' }, { status: 401 });
   }
 
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json(
+      {
+        error:
+          'Falta configurar SUPABASE_SERVICE_ROLE_KEY na Vercel! Adicione a chave service_role em Settings -> Environment Variables.',
+      },
+      { status: 500 }
+    );
+  }
+
   try {
     const body = await request.json();
     const { plates } = body;
@@ -53,6 +63,16 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   if (!(await isAuthenticated())) {
     return NextResponse.json({ error: 'Não autorizado. Faça login primeiro.' }, { status: 401 });
+  }
+
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json(
+      {
+        error:
+          'Falta configurar SUPABASE_SERVICE_ROLE_KEY na Vercel! Adicione a chave service_role em Settings -> Environment Variables.',
+      },
+      { status: 500 }
+    );
   }
 
   try {
@@ -99,6 +119,16 @@ export async function PUT(request: Request) {
 export async function DELETE(request: Request) {
   if (!(await isAuthenticated())) {
     return NextResponse.json({ error: 'Não autorizado. Faça login primeiro.' }, { status: 401 });
+  }
+
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json(
+      {
+        error:
+          'Falta configurar SUPABASE_SERVICE_ROLE_KEY na Vercel! Adicione a chave service_role em Settings -> Environment Variables.',
+      },
+      { status: 500 }
+    );
   }
 
   try {

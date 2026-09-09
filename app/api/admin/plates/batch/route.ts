@@ -24,6 +24,17 @@ export async function POST(request: Request) {
     );
   }
 
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          'Falta configurar SUPABASE_SERVICE_ROLE_KEY na Vercel! Adicione a chave service_role em Settings -> Environment Variables.',
+      },
+      { status: 500 }
+    );
+  }
+
   try {
     const body = await request.json();
     const quantity = Number(body.quantity);
