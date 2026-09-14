@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase';
-import { CreatePlateInput } from './types';
+import type { CreatePlateInput } from './types';
 
 const ALLOWED_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 5;

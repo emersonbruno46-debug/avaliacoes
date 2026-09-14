@@ -1,18 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { Lock, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Lock, ArrowRight, ShieldCheck, AlertCircle, AlertTriangle } from 'lucide-react';
 
 export default function AdminLoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isRateLimited, setIsRateLimited] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+    setIsRateLimited(false);
 
-    if (!password.trim()) {
+    if (!password) {
       setErrorMsg('Informe a senha de administração.');
       return;
     }
@@ -23,19 +25,22 @@ export default function AdminLoginPage() {
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: password.trim() }),
+        body: JSON.stringify({ password }), // Envia a senha exatamente como digitada (sem trim)
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.success) {
-        // Redirecionamento de navegador completo para garantir atualização dos cookies
+        // Redirecionamento completo para atualizar cookies
         window.location.href = '/';
       } else {
-        setErrorMsg(data.error || 'Senha incorreta. Tente novamente.');
+        if (res.status === 429) {
+          setIsRateLimited(true);
+        }
+        setErrorMsg(data.error || 'Falha na autenticação. Verifique os dados informados.');
       }
-    } catch (err: any) {
-      setErrorMsg('Erro de conexão ao validar senha.');
+    } catch {
+      setErrorMsg('Erro de conexão com o servidor. Tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -74,8 +79,18 @@ export default function AdminLoginPage() {
           </div>
 
           {errorMsg && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
+            <div
+              className={`p-3 border text-xs rounded-xl flex items-center gap-2 ${
+                isRateLimited
+                  ? 'bg-amber-50 border-amber-200 text-amber-800'
+                  : 'bg-red-50 border-red-200 text-red-700'
+              }`}
+            >
+              {isRateLimited ? (
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+              ) : (
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+              )}
               <span>{errorMsg}</span>
             </div>
           )}
@@ -83,7 +98,7 @@ export default function AdminLoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all text-base flex items-center justify-center gap-2 disabled:opacity-50"
+            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all text-base flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
           >
             {loading ? (
               <span>Autenticando...</span>

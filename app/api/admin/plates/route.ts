@@ -1,42 +1,57 @@
-import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { getAdminToken, COOKIE_NAME } from '@/lib/auth';
-import { getSupabaseAdmin } from '@/lib/supabase';
+import {
+  validateAdminSession,
+  validateRequestOrigin,
+  validateJsonContentType,
+  createAdminResponse,
+} from '@/lib/auth';
+import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { extractAndValidatePlaceId, buildGoogleReviewUrl } from '@/lib/placeIdHelper';
-
-async function isAuthenticated(): Promise<boolean> {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get(COOKIE_NAME);
-  return Boolean(sessionCookie && sessionCookie.value === getAdminToken());
-}
 
 /**
  * POST /api/admin/plates
- * Inserção protegida no servidor de 1 placa individual
+ * Inserção protegida no servidor de placas
  */
 export async function POST(request: Request) {
-  if (!(await isAuthenticated())) {
-    return NextResponse.json({ error: 'Não autorizado. Faça login primeiro.' }, { status: 401 });
-  }
-
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return NextResponse.json(
-      {
-        error:
-          'Falta configurar SUPABASE_SERVICE_ROLE_KEY na Vercel! Adicione a chave service_role em Settings -> Environment Variables.',
-      },
-      { status: 500 }
+  // 1. Validação de Origin contra CSRF
+  const originCheck = validateRequestOrigin(request);
+  if (!originCheck.isValid) {
+    return createAdminResponse(
+      { error: originCheck.error || 'Origem não autorizada.' },
+      { status: 403 }
     );
   }
 
+  // 2. Validação de Sessão Administrativa Centralizada
+  const sessionCheck = await validateAdminSession();
+  if (!sessionCheck.authenticated) {
+    return createAdminResponse(
+      { error: 'Não autorizado. Faça login primeiro.' },
+      { status: 401 }
+    );
+  }
+
+  // 3. Validação de Content-Type
+  if (!validateJsonContentType(request)) {
+    return createAdminResponse(
+      { error: 'Content-Type deve ser application/json.' },
+      { status: 400 }
+    );
+  }
+
+  let body: any;
   try {
-    const body = await request.json();
-    const { plates } = body;
+    body = await request.json();
+  } catch {
+    return createAdminResponse({ error: 'Corpo JSON malformado.' }, { status: 400 });
+  }
 
-    if (!Array.isArray(plates) || plates.length === 0) {
-      return NextResponse.json({ error: 'Dados de placas inválidos.' }, { status: 400 });
-    }
+  const { plates } = body || {};
 
+  if (!Array.isArray(plates) || plates.length === 0) {
+    return createAdminResponse({ error: 'Dados de placas inválidos.' }, { status: 400 });
+  }
+
+  try {
     const supabaseAdmin = getSupabaseAdmin();
     const { data, error } = await supabaseAdmin
       .from('plates')
@@ -44,14 +59,18 @@ export async function POST(request: Request) {
       .select();
 
     if (error) {
-      console.error('Erro na inserção server-side do Supabase:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error('[PLATES POST ERROR] Erro na inserção no Supabase:', error.message);
+      return createAdminResponse(
+        { error: 'Erro ao cadastrar placas no banco de dados.' },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json({ success: true, data });
+    return createAdminResponse({ success: true, data });
   } catch (err: any) {
-    return NextResponse.json(
-      { error: err.message || 'Erro ao criar placas no servidor.' },
+    console.error('[PLATES POST EXCEPTION]', err?.message || err);
+    return createAdminResponse(
+      { error: 'Falha interna ao processar inserção de placas.' },
       { status: 500 }
     );
   }
@@ -59,44 +78,62 @@ export async function POST(request: Request) {
 
 /**
  * PUT /api/admin/plates
- * Atualização protegida de nome da empresa e URL de destino
+ * Atualização protegida de estabelecimento e Place ID da placa
  */
 export async function PUT(request: Request) {
-  if (!(await isAuthenticated())) {
-    return NextResponse.json({ error: 'Não autorizado. Faça login primeiro.' }, { status: 401 });
+  // 1. Validação de Origin contra CSRF
+  const originCheck = validateRequestOrigin(request);
+  if (!originCheck.isValid) {
+    return createAdminResponse(
+      { error: originCheck.error || 'Origem não autorizada.' },
+      { status: 403 }
+    );
   }
 
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    return NextResponse.json(
-      {
-        error:
-          'Falta configurar as chaves do Supabase! Adicione SUPABASE_SERVICE_ROLE_KEY nas variáveis de ambiente.',
-      },
-      { status: 500 }
+  // 2. Validação de Sessão Administrativa Centralizada
+  const sessionCheck = await validateAdminSession();
+  if (!sessionCheck.authenticated) {
+    return createAdminResponse(
+      { error: 'Não autorizado. Faça login primeiro.' },
+      { status: 401 }
+    );
+  }
+
+  // 3. Validação de Content-Type
+  if (!validateJsonContentType(request)) {
+    return createAdminResponse(
+      { error: 'Content-Type deve ser application/json.' },
+      { status: 400 }
+    );
+  }
+
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return createAdminResponse({ error: 'Corpo JSON malformado.' }, { status: 400 });
+  }
+
+  const { id, business_name, google_place_id, link_tested } = body || {};
+
+  if (!id) {
+    return createAdminResponse({ error: 'ID da placa é obrigatório.' }, { status: 400 });
+  }
+
+  if (!business_name || !String(business_name).trim()) {
+    return createAdminResponse({ error: 'Nome do estabelecimento é obrigatório.' }, { status: 400 });
+  }
+
+  // Validação estrita do Google Place ID no servidor
+  const validation = extractAndValidatePlaceId(String(google_place_id || ''));
+  if (!validation.isValid || !validation.placeId) {
+    return createAdminResponse(
+      { error: validation.error || 'Google Place ID inválido.' },
+      { status: 400 }
     );
   }
 
   try {
-    const body = await request.json();
-    const { id, business_name, google_place_id, link_tested } = body;
-
-    if (!id) {
-      return NextResponse.json({ error: 'ID da placa é obrigatório.' }, { status: 400 });
-    }
-
-    if (!business_name || !String(business_name).trim()) {
-      return NextResponse.json({ error: 'Nome do estabelecimento é obrigatório.' }, { status: 400 });
-    }
-
-    // Validação estrita do Google Place ID no servidor
-    const validation = extractAndValidatePlaceId(String(google_place_id || ''));
-    if (!validation.isValid || !validation.placeId) {
-      return NextResponse.json(
-        { error: validation.error || 'Google Place ID inválido.' },
-        { status: 400 }
-      );
-    }
-
     const supabaseAdmin = getSupabaseAdmin();
 
     // 1. Confirmar que a placa existe antes de alterar
@@ -107,26 +144,26 @@ export async function PUT(request: Request) {
       .maybeSingle();
 
     if (fetchErr || !existingPlate) {
-      return NextResponse.json({ error: 'Placa não encontrada no banco de dados.' }, { status: 404 });
+      return createAdminResponse({ error: 'Placa não encontrada no banco de dados.' }, { status: 404 });
     }
 
     // 2. Gerar a URL oficial de destino no servidor (não confiar em URL enviada pelo cliente)
     const destination_url = buildGoogleReviewUrl(validation.placeId);
 
-    // 3. Montar payload com horários do servidor
+    // 3. Montar payload com horários do servidor e preservar integridade do code
     const nowIso = new Date().toISOString();
     const updatePayload: Record<string, any> = {
       business_name: String(business_name).trim(),
       company_name: String(business_name).trim(), // Sincronização retrocompatível
       google_place_id: validation.placeId,
       destination_url,
-      status: 'active', // 'active' é o valor padrão verificado pela rota /p/[code]
+      status: 'active',
       linked_at: nowIso,
       link_verified_at: Boolean(link_tested) ? nowIso : null,
       updated_at: nowIso,
     };
 
-    // 4. Atualizar somente a placa selecionada (preservando rigorosamente o code original)
+    // 4. Atualizar somente a placa selecionada
     const { data, error } = await supabaseAdmin
       .from('plates')
       .update(updatePayload)
@@ -135,14 +172,18 @@ export async function PUT(request: Request) {
       .single();
 
     if (error) {
-      console.error('Erro no Supabase ao atualizar placa:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error('[PLATES PUT ERROR] Erro no Supabase ao atualizar placa:', error.message);
+      return createAdminResponse(
+        { error: 'Erro ao atualizar dados da placa no banco de dados.' },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json({ success: true, data });
+    return createAdminResponse({ success: true, data });
   } catch (err: any) {
-    return NextResponse.json(
-      { error: err.message || 'Erro ao atualizar placa.' },
+    console.error('[PLATES PUT EXCEPTION]', err?.message || err);
+    return createAdminResponse(
+      { error: 'Falha interna ao atualizar dados da placa.' },
       { status: 500 }
     );
   }
@@ -153,17 +194,21 @@ export async function PUT(request: Request) {
  * Exclusão protegida de placa do banco de dados
  */
 export async function DELETE(request: Request) {
-  if (!(await isAuthenticated())) {
-    return NextResponse.json({ error: 'Não autorizado. Faça login primeiro.' }, { status: 401 });
+  // 1. Validação de Origin contra CSRF
+  const originCheck = validateRequestOrigin(request);
+  if (!originCheck.isValid) {
+    return createAdminResponse(
+      { error: originCheck.error || 'Origem não autorizada.' },
+      { status: 403 }
+    );
   }
 
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return NextResponse.json(
-      {
-        error:
-          'Falta configurar SUPABASE_SERVICE_ROLE_KEY na Vercel! Adicione a chave service_role em Settings -> Environment Variables.',
-      },
-      { status: 500 }
+  // 2. Validação de Sessão Administrativa Centralizada
+  const sessionCheck = await validateAdminSession();
+  if (!sessionCheck.authenticated) {
+    return createAdminResponse(
+      { error: 'Não autorizado. Faça login primeiro.' },
+      { status: 401 }
     );
   }
 
@@ -172,20 +217,25 @@ export async function DELETE(request: Request) {
     const id = searchParams.get('id');
 
     if (!id) {
-      return NextResponse.json({ error: 'ID da placa é obrigatório.' }, { status: 400 });
+      return createAdminResponse({ error: 'ID da placa é obrigatório.' }, { status: 400 });
     }
 
     const supabaseAdmin = getSupabaseAdmin();
     const { error } = await supabaseAdmin.from('plates').delete().eq('id', id);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error('[PLATES DELETE ERROR] Erro ao deletar placa:', error.message);
+      return createAdminResponse(
+        { error: 'Erro ao excluir placa do banco de dados.' },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json({ success: true });
+    return createAdminResponse({ success: true });
   } catch (err: any) {
-    return NextResponse.json(
-      { error: err.message || 'Erro ao deletar placa.' },
+    console.error('[PLATES DELETE EXCEPTION]', err?.message || err);
+    return createAdminResponse(
+      { error: 'Falha interna ao excluir placa.' },
       { status: 500 }
     );
   }
