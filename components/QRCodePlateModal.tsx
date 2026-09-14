@@ -6,7 +6,6 @@ import { Plate } from '@/lib/types';
 import {
   X,
   Copy,
-  Download,
   Check,
   ExternalLink,
   QrCode,
@@ -33,9 +32,7 @@ export default function QRCodePlateModal({
   const [copiedId, setCopiedId] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 
-  if (!plate) return null;
-
-  const targetUrl = `${baseUrl.replace(/\/$/, '')}/p/${plate.code}`;
+  const targetUrl = plate ? `${baseUrl.replace(/\/$/, '')}/p/${plate.code}` : '';
 
   useEffect(() => {
     if (!plate) return;
@@ -82,6 +79,7 @@ export default function QRCodePlateModal({
   };
 
   const copyIdToClipboard = async () => {
+    if (!plate) return;
     try {
       await navigator.clipboard.writeText(plate.code);
       setCopiedId(true);
@@ -92,7 +90,7 @@ export default function QRCodePlateModal({
   };
 
   const downloadPNG = () => {
-    if (!pngDataUrl) return;
+    if (!pngDataUrl || !plate) return;
     const link = document.createElement('a');
     link.href = pngDataUrl;
     link.download = `QR-${plate.code}.png`;
@@ -102,7 +100,7 @@ export default function QRCodePlateModal({
   };
 
   const downloadSVG = () => {
-    if (!svgString) return;
+    if (!svgString || !plate) return;
     const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -113,6 +111,8 @@ export default function QRCodePlateModal({
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
+
+  if (!plate) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">

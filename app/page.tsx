@@ -15,7 +15,6 @@ import {
   Search,
   Download,
   QrCode,
-  CheckCircle,
   AlertTriangle,
   RefreshCw,
   Edit,
@@ -28,6 +27,10 @@ import {
   AlertCircle,
   X,
   CheckCircle2,
+  ExternalLink,
+  Clock,
+  Sparkles,
+  MapPin,
 } from 'lucide-react';
 
 export default function StockPage() {
@@ -295,11 +298,14 @@ export default function StockPage() {
     const matchCompany = p.company_name
       ? p.company_name.toLowerCase().includes(query)
       : false;
-    return matchCode || matchCompany;
+    const matchBusiness = p.business_name
+      ? p.business_name.toLowerCase().includes(query)
+      : false;
+    return matchCode || matchCompany || matchBusiness;
   });
 
   const availableCount = plates.filter((p) => p.status === 'available').length;
-  const activeCount = plates.filter((p) => p.status === 'active').length;
+  const configuredCount = plates.filter((p) => p.status === 'active' && Boolean(p.destination_url)).length;
 
   return (
     <main className="min-h-screen bg-gray-50 text-gray-900 py-8 px-4 sm:px-6 lg:px-8 font-sans relative">
@@ -438,8 +444,8 @@ export default function StockPage() {
             </div>
             <div className="h-6 w-px bg-gray-200" />
             <div className="text-center">
-              <span className="text-green-600 block uppercase tracking-wider text-[10px]">Ativas</span>
-              <span className="text-base font-black text-green-700">{activeCount}</span>
+              <span className="text-green-600 block uppercase tracking-wider text-[10px]">Configuradas</span>
+              <span className="text-base font-black text-green-700">{configuredCount}</span>
             </div>
           </div>
         </div>
@@ -481,7 +487,22 @@ export default function StockPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredPlates.map((plate) => {
-                const isAvailable = plate.status === 'available';
+                const isConfigured = plate.status === 'active' && Boolean(plate.destination_url);
+                const businessName =
+                  plate.business_name ||
+                  plate.company_name ||
+                  (isConfigured ? 'Estabelecimento não informado' : '—');
+                const formattedDate = plate.linked_at
+                  ? new Intl.DateTimeFormat('pt-BR', {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    }).format(new Date(plate.linked_at))
+                  : plate.updated_at && isConfigured
+                  ? new Intl.DateTimeFormat('pt-BR', {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    }).format(new Date(plate.updated_at))
+                  : null;
 
                 return (
                   <div
@@ -493,20 +514,20 @@ export default function StockPage() {
                       <div className="flex items-center gap-2">
                         <Tag className="w-4 h-4 text-blue-600" />
                         <span className="font-mono font-black text-xl text-gray-900 tracking-wider">
-                          {plate.code}
+                          #{plate.code}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wide border ${
-                            isAvailable
-                              ? 'bg-blue-50 text-blue-700 border-blue-200'
-                              : 'bg-green-50 text-green-700 border-green-200'
+                            isConfigured
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-blue-50 text-blue-700 border-blue-200'
                           }`}
                         >
-                          {isAvailable ? 'Disponível' : 'Ativa'}
+                          {isConfigured ? 'Configurada' : 'Disponível'}
                         </span>
-                        
+
                         {/* Botão Remover Placa */}
                         <button
                           onClick={() => setDeletingPlate(plate)}
@@ -518,36 +539,64 @@ export default function StockPage() {
                       </div>
                     </div>
 
-                    {/* Linha 2: Empresa e Destino */}
-                    <div className="space-y-1.5 text-xs border-t border-b border-gray-100 py-3">
-                      <div className="flex items-center justify-between text-gray-600">
-                        <span className="flex items-center gap-1 font-medium text-gray-500">
+                    {/* Linha 2: Empresa, Endereço, Destino e Data */}
+                    <div className="space-y-2 text-xs border-t border-b border-gray-100 py-3">
+                      {/* Estabelecimento */}
+                      <div className="flex items-start justify-between gap-2 text-gray-600">
+                        <span className="flex items-center gap-1 font-medium text-gray-500 shrink-0">
                           <Store className="w-3.5 h-3.5 text-gray-400" />
-                          Empresa:
+                          Estabelecimento:
                         </span>
-                        <span className="font-bold text-gray-900 truncate max-w-[200px]">
-                          {plate.company_name || '—'}
+                        <span className="font-bold text-gray-900 text-right truncate max-w-[220px]">
+                          {businessName || '—'}
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between text-gray-600">
-                        <span className="flex items-center gap-1 font-medium text-gray-500">
+                      {/* Endereço formatado (se houver) */}
+                      {plate.formatted_address && (
+                        <div className="flex items-start justify-between gap-2 text-gray-500">
+                          <span className="flex items-center gap-1 font-medium text-gray-400 shrink-0">
+                            <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                            Endereço:
+                          </span>
+                          <span className="text-gray-600 text-right truncate max-w-[220px]" title={plate.formatted_address}>
+                            {plate.formatted_address}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Destino Google */}
+                      <div className="flex items-start justify-between gap-2 text-gray-600">
+                        <span className="flex items-center gap-1 font-medium text-gray-500 shrink-0">
                           <Globe className="w-3.5 h-3.5 text-gray-400" />
-                          Destino Google:
+                          Destino atual:
                         </span>
                         {plate.destination_url ? (
                           <a
                             href={plate.destination_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="font-mono text-blue-600 font-medium hover:underline truncate max-w-[200px]"
+                            className="font-mono text-blue-600 font-semibold hover:underline truncate max-w-[220px] inline-flex items-center gap-1"
+                            title={plate.destination_url}
                           >
-                            {plate.destination_url}
+                            <span className="truncate">{plate.destination_url}</span>
+                            <ExternalLink className="w-3 h-3 shrink-0" />
                           </a>
                         ) : (
                           <span className="text-gray-400 font-mono">—</span>
                         )}
                       </div>
+
+                      {/* Data da última vinculação */}
+                      {formattedDate && (
+                        <div className="flex items-center justify-between text-gray-500 text-[11px] pt-1 border-t border-gray-100/60">
+                          <span className="flex items-center gap-1 text-gray-400">
+                            <Clock className="w-3 h-3 text-gray-400" />
+                            Última vinculação:
+                          </span>
+                          <span className="font-medium text-gray-700">{formattedDate}</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Linha 3: Ações */}
@@ -560,21 +609,32 @@ export default function StockPage() {
                         <span>VER QR</span>
                       </button>
 
-                      {isAvailable ? (
+                      {isConfigured && plate.destination_url && (
                         <button
-                          onClick={() => setActivatingPlate(plate)}
-                          className="flex-1 py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                          onClick={() => window.open(plate.destination_url!, '_blank', 'noopener,noreferrer')}
+                          className="py-2.5 px-3 bg-white hover:bg-gray-100 text-gray-700 text-xs font-bold rounded-xl border border-gray-300 transition-colors flex items-center justify-center gap-1"
+                          title="Abrir destino de avaliação no Google em nova aba"
                         >
-                          <CheckCircle className="w-4 h-4" />
-                          <span>ATIVAR</span>
+                          <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
+                          <span>TESTAR</span>
                         </button>
-                      ) : (
+                      )}
+
+                      {isConfigured ? (
                         <button
                           onClick={() => setActivatingPlate(plate)}
                           className="flex-1 py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-xl border border-emerald-200 transition-colors flex items-center justify-center gap-1.5"
                         >
                           <Edit className="w-4 h-4" />
-                          <span>EDITAR</span>
+                          <span>EDITAR VÍNCULO</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setActivatingPlate(plate)}
+                          className="flex-1 py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                        >
+                          <Sparkles className="w-4 h-4" />
+                          <span>VINCULAR ESTABELECIMENTO</span>
                         </button>
                       )}
                     </div>
@@ -600,9 +660,9 @@ export default function StockPage() {
         <ActivatePlateModal
           plate={activatingPlate}
           onClose={() => setActivatingPlate(null)}
-          onSuccess={() => {
+          onSuccess={(customMsg?: string) => {
             fetchPlates();
-            showSuccessNotice('Placa atualizada com sucesso!');
+            showSuccessNotice(customMsg || 'Placa vinculada com sucesso ao estabelecimento.');
           }}
         />
       )}
