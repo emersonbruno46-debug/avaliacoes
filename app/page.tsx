@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import JSZip from 'jszip';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { generateUniquePlateCode } from '@/lib/codeGenerator';
@@ -452,19 +451,10 @@ export default function StockPage() {
               <span className="text-base font-black text-blue-700">{availableCount}</span>
             </div>
             <div className="h-6 w-px bg-gray-200" />
-            <Link
-              href="/configuradas"
-              className="text-center group transition-colors hover:text-emerald-800"
-              title="Acessar página de Placas Já Configuradas (/configuradas)"
-            >
-              <span className="text-emerald-600 block uppercase tracking-wider text-[10px] flex items-center justify-center gap-1">
-                Configuradas
-                <ExternalLink className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100" />
-              </span>
-              <span className="text-base font-black text-emerald-700 underline decoration-dotted underline-offset-2">
-                {configuredCount}
-              </span>
-            </Link>
+            <div className="text-center">
+              <span className="text-gray-400 block uppercase tracking-wider text-[10px]">Configuradas</span>
+              <span className="text-base font-black text-gray-700">{configuredCount}</span>
+            </div>
           </div>
         </div>
 
@@ -500,7 +490,7 @@ export default function StockPage() {
               </p>
               <p className="text-xs text-gray-400 max-w-sm mx-auto">
                 {configuredCount > 0
-                  ? `As ${configuredCount} placas já configuradas estão no painel restrito (/configuradas). Clique em "GERAR NOVA PLACA" para criar mais placas para o estoque.`
+                  ? 'Todas as placas geradas já foram configuradas. Clique em "GERAR NOVA PLACA" para criar mais placas para o estoque.'
                   : 'Clique no botão GERAR NOVA PLACA no topo para criar sua primeira placa física.'}
               </p>
             </div>
@@ -684,7 +674,7 @@ export default function StockPage() {
             fetchPlates();
             showSuccessNotice(
               customMsg ||
-                'Placa vinculada com sucesso! Ela foi movida para a página de Placas Configuradas (/configuradas).'
+                'Placa vinculada com sucesso! Ela foi movida para fora deste estoque.'
             );
           }}
         />
