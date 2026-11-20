@@ -31,8 +31,20 @@ export default function AdminLoginPage() {
       const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.success) {
-        // Redirecionamento completo para atualizar cookies
-        window.location.href = '/';
+        if (typeof window !== 'undefined') {
+          const urlParams = new URLSearchParams(window.location.search);
+          const redirectParam = urlParams.get('redirect');
+          if (redirectParam) {
+            window.location.href = redirectParam;
+          } else if (
+            window.location.pathname !== '/admin' &&
+            window.location.pathname !== '/login'
+          ) {
+            window.location.reload();
+          } else {
+            window.location.href = '/';
+          }
+        }
       } else {
         if (res.status === 429) {
           setIsRateLimited(true);

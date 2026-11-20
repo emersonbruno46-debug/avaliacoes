@@ -114,10 +114,50 @@ export async function PUT(request: Request) {
     return createAdminResponse({ error: 'Corpo JSON malformado.' }, { status: 400 });
   }
 
-  const { id, business_name, google_place_id, link_tested } = body || {};
+  const { id, business_name, google_place_id, link_tested, action } = body || {};
 
   if (!id) {
     return createAdminResponse({ error: 'ID da placa é obrigatório.' }, { status: 400 });
+  }
+
+  // Ação de desvincular a placa (retornar ao estoque disponível)
+  if (action === 'unlink') {
+    try {
+      const supabaseAdmin = getSupabaseAdmin();
+      const nowIso = new Date().toISOString();
+      const { data, error } = await supabaseAdmin
+        .from('plates')
+        .update({
+          business_name: null,
+          company_name: null,
+          google_place_id: null,
+          destination_url: null,
+          formatted_address: null,
+          status: 'available',
+          linked_at: null,
+          link_verified_at: null,
+          updated_at: nowIso,
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[PLATES UNLINK ERROR] Erro ao desvincular placa:', error.message);
+        return createAdminResponse(
+          { error: 'Erro ao desvincular placa no banco de dados.' },
+          { status: 500 }
+        );
+      }
+
+      return createAdminResponse({ success: true, data });
+    } catch (err: any) {
+      console.error('[PLATES UNLINK EXCEPTION]', err?.message || err);
+      return createAdminResponse(
+        { error: 'Falha interna ao desvincular placa.' },
+        { status: 500 }
+      );
+    }
   }
 
   if (!business_name || !String(business_name).trim()) {

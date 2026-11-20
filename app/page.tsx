@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import JSZip from 'jszip';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { generateUniquePlateCode } from '@/lib/codeGenerator';
@@ -291,7 +292,15 @@ export default function StockPage() {
     return <AdminLoginPage />;
   }
 
-  const filteredPlates = plates.filter((p) => {
+  // Placas em estoque (disponíveis / virgens) e placas já configuradas
+  const availablePlates = plates.filter(
+    (p) => !(p.status === 'active' && Boolean(p.destination_url))
+  );
+  const configuredPlates = plates.filter(
+    (p) => p.status === 'active' && Boolean(p.destination_url)
+  );
+
+  const filteredPlates = availablePlates.filter((p) => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return true;
     const matchCode = p.code.toLowerCase().includes(query);
@@ -304,8 +313,8 @@ export default function StockPage() {
     return matchCode || matchCompany || matchBusiness;
   });
 
-  const availableCount = plates.filter((p) => p.status === 'available').length;
-  const configuredCount = plates.filter((p) => p.status === 'active' && Boolean(p.destination_url)).length;
+  const availableCount = availablePlates.length;
+  const configuredCount = configuredPlates.length;
 
   return (
     <main className="min-h-screen bg-gray-50 text-gray-900 py-8 px-4 sm:px-6 lg:px-8 font-sans relative">
@@ -434,19 +443,28 @@ export default function StockPage() {
 
           <div className="flex items-center justify-around bg-white p-3 border border-gray-200 rounded-2xl shadow-xs text-xs font-semibold">
             <div className="text-center">
-              <span className="text-gray-400 block uppercase tracking-wider text-[10px]">Total</span>
+              <span className="text-gray-400 block uppercase tracking-wider text-[10px]">Total Criadas</span>
               <span className="text-base font-black text-gray-900">{plates.length}</span>
             </div>
             <div className="h-6 w-px bg-gray-200" />
             <div className="text-center">
-              <span className="text-blue-600 block uppercase tracking-wider text-[10px]">Disponíveis</span>
+              <span className="text-blue-600 block uppercase tracking-wider text-[10px]">No Estoque</span>
               <span className="text-base font-black text-blue-700">{availableCount}</span>
             </div>
             <div className="h-6 w-px bg-gray-200" />
-            <div className="text-center">
-              <span className="text-green-600 block uppercase tracking-wider text-[10px]">Configuradas</span>
-              <span className="text-base font-black text-green-700">{configuredCount}</span>
-            </div>
+            <Link
+              href="/configuradas"
+              className="text-center group transition-colors hover:text-emerald-800"
+              title="Acessar página de Placas Já Configuradas (/configuradas)"
+            >
+              <span className="text-emerald-600 block uppercase tracking-wider text-[10px] flex items-center justify-center gap-1">
+                Configuradas
+                <ExternalLink className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100" />
+              </span>
+              <span className="text-base font-black text-emerald-700 underline decoration-dotted underline-offset-2">
+                {configuredCount}
+              </span>
+            </Link>
           </div>
         </div>
 
@@ -454,8 +472,8 @@ export default function StockPage() {
         <section className="space-y-4">
           <div className="flex items-center justify-between px-1">
             <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
-              <span>Placas em Estoque</span>
-              <span className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full font-mono">
+              <span>Placas em Estoque (Disponíveis)</span>
+              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-mono font-bold">
                 {filteredPlates.length}
               </span>
             </h2>
@@ -477,11 +495,13 @@ export default function StockPage() {
               <QrCode className="w-10 h-10 text-gray-300 mx-auto" />
               <p className="text-sm font-semibold text-gray-600">
                 {searchQuery
-                  ? 'Nenhuma placa encontrada para esta busca.'
-                  : 'Nenhuma placa física gerada ainda.'}
+                  ? 'Nenhuma placa em estoque encontrada para esta busca.'
+                  : 'Nenhuma placa virgem no estoque.'}
               </p>
               <p className="text-xs text-gray-400 max-w-sm mx-auto">
-                Clique no botão <strong>GERAR NOVA PLACA</strong> no topo para criar sua primeira placa física.
+                {configuredCount > 0
+                  ? `As ${configuredCount} placas já configuradas estão no painel restrito (/configuradas). Clique em "GERAR NOVA PLACA" para criar mais placas para o estoque.`
+                  : 'Clique no botão GERAR NOVA PLACA no topo para criar sua primeira placa física.'}
               </p>
             </div>
           ) : (
@@ -662,7 +682,10 @@ export default function StockPage() {
           onClose={() => setActivatingPlate(null)}
           onSuccess={(customMsg?: string) => {
             fetchPlates();
-            showSuccessNotice(customMsg || 'Placa vinculada com sucesso ao estabelecimento.');
+            showSuccessNotice(
+              customMsg ||
+                'Placa vinculada com sucesso! Ela foi movida para a página de Placas Configuradas (/configuradas).'
+            );
           }}
         />
       )}
